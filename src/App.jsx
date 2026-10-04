@@ -1,69 +1,106 @@
-import { useEffect, useState } from "react";
-import Header from "./myComponents/Header";
+import { useState } from "react";
 import "./App.css";
+import AuthProvider from "./auth/AuthProvider";
+import { useAuth } from "./auth/useAuth";
+import { useTodos } from "./hooks/useTodos";
+import Header from "./myComponents/Header";
 import Todos from "./myComponents/Todos";
 import Footer from "./myComponents/Footer";
-import { db } from "./firebase";
-import {
-  collection,
-  addDoc,
-  deleteDoc,
-  updateDoc,
-  doc,
-  onSnapshot,
-} from "firebase/firestore";
+import AuthPage from "./pages/AuthPage";
+import SetupNotice from "./pages/SetupNotice";
 
-function App() {
-  const [todos, setTodos] = useState([]);
+// Tasks the old single-user version saved in this browser.
+function readLegacyTodos() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("todos") || "[]");
+    return Array.isArray(saved)
+      ? saved.filter((item) => item && typeof item.title === "string" && item.title.trim())
+      : [];
+  } catch {
+    return [];
+  }
+}
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "todos"), (snapshot) => {
-      const todosData = snapshot.docs.map((docItem) => ({
-        id: docItem.id,
-        ...docItem.data(),
-      }));
-      setTodos(todosData);
-    });
+function TodoApp({ user }) {
+  const { signOut } = useAuth();
+  const {
+    todos,
+    loading,
+    error,
+    addTodo,
+    toggleTodo,
+    editTodo,
+    deleteTodo,
+    clearCompleted,
+    importTodos,
+  } = useTodos(user.uid);
 
-    return () => unsubscribe();
-  }, []);
+  const dismissKey = `legacy-dismissed-${user.uid}`;
+  const [legacy, setLegacy] = useState(() =>
+    localStorage.getItem(dismissKey) ? [] : readLegacyTodos(),
+  );
 
-  async function addTodo(todo) {
-    await addDoc(collection(db, "todos"), {
-      title: todo,
-      completed: false,
-    });
+  function importLegacy() {
+    importTodos(legacy)
+      .then(() => localStorage.removeItem("todos"))
+      .catch(() => {});
+    setLegacy([]);
   }
 
-  async function deleteTodo(id) {
-    await deleteDoc(doc(db, "todos", id));
+  function dismissLegacy() {
+    localStorage.setItem(dismissKey, "1");
+    setLegacy([]);
   }
 
-  async function toggleComplete(id) {
-    const todo = todos.find((t) => t.id === id);
-    await updateDoc(doc(db, "todos", id), {
-      completed: !todo.completed,
-    });
-  }
-
-  async function editTodo(id, newTitle) {
-    await updateDoc(doc(db, "todos", id), {
-      title: newTitle,
-    });
-  }
+  const actions = {
+    add: addTodo,
+    toggle: toggleTodo,
+    edit: editTodo,
+    remove: deleteTodo,
+    clearCompleted,
+  };
 
   return (
     <>
-      <Header />
+      <Header user={user} onSignOut={signOut} />
       <Todos
+        user={user}
         todos={todos}
-        addTodo={addTodo}
-        deleteTodo={deleteTodo}
-        toggleComplete={toggleComplete}
-        editTodo={editTodo}
+        loading={loading}
+        loadError={Boolean(error)}
+        actions={actions}
+        legacyCount={legacy.length}
+        onImportLegacy={importLegacy}
+        onDismissLegacy={dismissLegacy}
       />
       <Footer />
     </>
+  );
+}
+
+function Shell() {
+  const { user, loading, isConfigured } = useAuth();
+
+  if (!isConfigured) return <SetupNotice />;
+
+  if (loading) {
+    return (
+      <div className="splash" role="status">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!user) return <AuthPage />;
+
+  return <TodoApp key={user.uid} user={user} />;
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Shell />
+    </AuthProvider>
   );
 }
 

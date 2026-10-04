@@ -1,99 +1,145 @@
 import { useState } from "react";
+import { TaskFields } from "./Composer";
+import { describeCreated, describeDue } from "../utils/dates";
 
-function Todo(props) {
+const PRIORITY_LABELS = { low: "Low priority", normal: "Normal", high: "High priority" };
+
+function Todo({ todo, onToggle, onSave, onDelete }) {
+  const priority = todo.priority || "normal";
+  const due = describeDue(todo.dueDate, todo.completed);
+
   const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState(props.title);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [draft, setDraft] = useState(null);
+
+  function startEditing() {
+    setDraft({ title: todo.title, priority, dueDate: todo.dueDate || "" });
+    setConfirmingDelete(false);
+    setIsEditing(true);
+  }
+
+  function handleSave(event) {
+    event.preventDefault();
+    if (draft.title.trim() === "") return;
+
+    onSave(todo.id, draft);
+    setIsEditing(false);
+  }
+
+  if (isEditing) {
+    return (
+      <li className="task is-editing">
+        <form
+          className="task-edit"
+          onSubmit={handleSave}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setIsEditing(false);
+          }}
+        >
+          <TaskFields
+            values={draft}
+            onChange={setDraft}
+            idPrefix={`edit-${todo.id}`}
+            autoFocus
+          />
+          <div className="composer-footer">
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => setIsEditing(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={draft.title.trim() === ""}
+            >
+              Save changes
+            </button>
+          </div>
+        </form>
+      </li>
+    );
+  }
 
   return (
-    <div
-      className="card shadow-sm border-0 my-3"
-      style={{
-        backgroundColor: props.completed ? "#d1e7dd" : "white",
-      }}
-    >
-      <div className="card-body d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-3 py-3 px-3 px-md-4">
-        {/* Todo Content */}
-        <div className="d-flex align-items-center flex-grow-1 min-width-0">
-          <input
-            type="checkbox"
-            className="form-check-input me-2 flex-shrink-0"
-            checked={props.completed}
-            onChange={() => props.toggleComplete(props.id)}
-          />
+    <li className={`task priority-${priority}${todo.completed ? " is-done" : ""}`}>
+      <label className="task-check">
+        <input
+          type="checkbox"
+          checked={todo.completed}
+          onChange={() => onToggle(todo.id, !todo.completed)}
+          aria-label={`${todo.completed ? "Mark as not done" : "Mark as done"}: ${todo.title}`}
+        />
+        <span className="check-box" aria-hidden="true">
+          <i className="bi bi-check-lg"></i>
+        </span>
+      </label>
 
-          {isEditing ? (
-            <input
-              type="text"
-              className="form-control"
-              value={editTitle}
-              onChange={(event) => setEditTitle(event.target.value)}
-            />
-          ) : (
-            <span
-              className="text-break"
-              style={{
-                textDecoration: props.completed ? "line-through" : "none",
-                color: props.completed ? "gray" : "black",
-              }}
-            >
-              {props.title}
+      <div className="task-body">
+        <p className="task-title">{todo.title}</p>
+
+        <div className="task-meta">
+          {due && (
+            <span className={`chip chip-due-${due.tone}`}>
+              <i className="bi bi-calendar-event" aria-hidden="true"></i>
+              {due.label}
             </span>
           )}
-        </div>
-
-        {/* Buttons */}
-        <div className="d-flex flex-wrap gap-2 justify-content-start justify-content-md-end">
-          {isEditing ? (
-            <>
-              <button
-                className="btn btn-outline-success btn-sm"
-                onClick={() => {
-                  if (editTitle.trim() === "") return;
-                  props.editTodo(props.id, editTitle);
-                  setIsEditing(false);
-                }}
-              >
-                <i className="bi bi-check-lg me-1"></i>
-                Save
-              </button>
-
-              <button
-                className="btn btn-outline-secondary btn-sm"
-                onClick={() => {
-                  setIsEditing(false);
-                  setEditTitle(props.title);
-                }}
-              >
-                <i className="bi bi-x-lg me-1"></i>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                className="btn btn-outline-warning btn-sm"
-                onClick={() => setIsEditing(true)}
-              >
-                <i className="bi bi-pencil-square me-1"></i>
-                Edit
-              </button>
-
-              <button
-                className="btn btn-outline-danger btn-sm"
-                onClick={() => {
-                  if (confirm("Are you sure you want to delete this todo?")) {
-                    props.deleteTodo(props.id);
-                  }
-                }}
-              >
-                <i className="bi bi-trash me-1"></i>
-                Delete
-              </button>
-            </>
+          {priority !== "normal" && (
+            <span className={`chip chip-priority-${priority}`}>
+              <i className="bi bi-flag-fill" aria-hidden="true"></i>
+              {PRIORITY_LABELS[priority]}
+            </span>
           )}
+          <span className="added">{describeCreated(todo.createdAt)}</span>
         </div>
       </div>
-    </div>
+
+      <div className={confirmingDelete ? "task-actions is-visible" : "task-actions"}>
+        {confirmingDelete ? (
+          <>
+            <span className="confirm-text">Delete this task?</span>
+            <button
+              type="button"
+              className="btn btn-danger btn-small"
+              onClick={() => onDelete(todo.id)}
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet btn-small"
+              onClick={() => setConfirmingDelete(false)}
+            >
+              Keep
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={startEditing}
+              aria-label={`Edit: ${todo.title}`}
+              title="Edit"
+            >
+              <i className="bi bi-pencil" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              className="icon-btn icon-btn-danger"
+              onClick={() => setConfirmingDelete(true)}
+              aria-label={`Delete: ${todo.title}`}
+              title="Delete"
+            >
+              <i className="bi bi-trash3" aria-hidden="true"></i>
+            </button>
+          </>
+        )}
+      </div>
+    </li>
   );
 }
 
